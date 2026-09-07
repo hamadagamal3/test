@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام محمد جمال للمقاولات</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%); min-height:100vh; padding:20px; }
+.container { max-width:1500px; margin:0 auto; background:rgba(255,255,255,0.97); border-radius:20px; box-shadow:0 20px 40px rgba(0,0,0,0.25); overflow:hidden; }
+.header { background:linear-gradient(45deg,#7c2d12,#c2410c); color:white; padding:26px; text-align:center; }
+.header h1 { font-size:2rem; margin-bottom:6px; text-shadow:2px 2px 4px rgba(0,0,0,0.3); }
+.header p { opacity:0.9; }
+.tabs { display:flex; flex-wrap:wrap; background:#f8fafc; border-bottom:2px solid #e2e8f0; }
+.tab { flex:1; min-width:130px; padding:12px 6px; text-align:center; background:#f1f5f9; cursor:pointer; border:none; font-size:0.82rem; font-weight:bold; color:#475569; border-left:1px solid #e2e8f0; }
+.tab:hover { background:#e2e8f0; }
+.tab.active { background:white; color:#c2410c; border-bottom:3px solid #c2410c; }
+.tab-content { display:none; padding:26px; }
+.tab-content.active { display:block; }
+.form-section { background:#f8fafc; padding:22px; border-radius:14px; margin-bottom:22px; border:2px solid #e2e8f0; }
+.form-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:16px; }
+.form-group { display:flex; flex-direction:column; }
+label { font-weight:bold; margin-bottom:6px; color:#334155; font-size:0.9rem; }
+input, select { padding:10px 12px; border:2px solid #e2e8f0; border-radius:8px; font-size:0.95rem; background:white; }
+input:focus, select:focus { outline:none; border-color:#c2410c; box-shadow:0 0 0 3px rgba(194,65,12,0.12); }
+.btn { background:linear-gradient(45deg,#c2410c,#ea580c); color:white; border:none; padding:11px 22px; border-radius:8px; cursor:pointer; font-size:0.95rem; font-weight:bold; }
+.btn.secondary { background:linear-gradient(45deg,#64748b,#475569); }
+.btn.danger { background:linear-gradient(45deg,#dc2626,#b91c1c); padding:6px 12px; font-size:0.82rem; }
+.btn.small { padding:6px 12px; font-size:0.82rem; }
+table { width:100%; border-collapse:collapse; background:white; border-radius:10px; overflow:hidden; font-size:0.85rem; }
+th, td { padding:10px 8px; text-align:center; border-bottom:1px solid #e2e8f0; }
+th { background:#1e293b; color:white; }
+tr:hover td { background:#fff7ed; }
+.toolbar { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:16px; margin-bottom:24px; }
+.card { background:linear-gradient(135deg,#fff,#fff7ed); border:2px solid #fed7aa; border-radius:14px; padding:18px; text-align:center; }
+.card h3 { color:#7c2d12; font-size:0.9rem; margin-bottom:8px; }
+.card .val { font-size:1.6rem; font-weight:bold; color:#c2410c; }
+.section-title { font-size:1.1rem; font-weight:bold; color:#7c2d12; margin:24px 0 12px; border-right:4px solid #c2410c; padding-right:10px; }
+.empty { text-align:center; color:#94a3b8; padding:20px; }
+.badge { padding:4px 10px; border-radius:20px; font-size:0.78rem; font-weight:bold; }
+.badge.pos { background:#dcfce7; color:#166534; }
+.badge.neg { background:#fee2e2; color:#991b1b; }
+::-webkit-scrollbar{height:8px;} 
+.table-wrap{overflow-x:auto;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🏗️ نظام محمد جمال للمقاولات</h1>
+    <p>إدارة متكاملة للمشاريع، المستخلصات، العمالة، الباطن، والمخازن</p>
+  </div>
+  <div class="tabs" id="tabsBar"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+/* ============ DATA LAYER ============ */
+const STORAGE_KEY = 'mgConstructionERP_v1';
+let DB = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || {
+  projects:[], clients:[], clientExtracts:[], contracts:[], suppliers:[], materials:[],
+  purchases:[], materialIssues:[], workers:[], attendance:[], subcontractors:[],
+  subcontractorContracts:[], subcontractorExtracts:[], progress:[], equipment:[],
+  expenses:[], retentionReleases:[], clientPayments:[]
+};
+const SEEDED_FLAG = STORAGE_KEY + '_seeded';
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+// migration safety: ensure all expected keys exist even for older saved backups
+['projects','clients','clientExtracts','contracts','suppliers','materials','purchases',
+ 'materialIssues','workers','attendance','subcontractors','subcontractorContracts',
+ 'subcontractorExtracts','progress','equipment','expenses','retentionReleases','clientPayments']
+ .forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+
+function seedDemoData(){
+  const clientId = uid(), projectId = uid(), supplierId = uid();
+  const mat1 = uid(), mat2 = uid();
+  const contractId = uid(), workerId1 = uid(), workerId2 = uid();
+  const subId = uid(), subContractId = uid();
+
+  DB.clients.push({id:clientId, name:'شركة النور للتطوير العقاري', phone:'01001234567', address:'مدينة نصر، القاهرة', openingBalance:20000});
+  DB.projects.push({id:projectId, code:'PRJ-2026-01', name:'مبنى إداري - مدينة نصر', clientId, location:'مدينة نصر، القاهرة', contractValue:2000000, startDate:'2026-01-15', endDate:'2026-12-31', status:'جاري التنفيذ'});
+  DB.contracts.push({id:uid(), projectId, contractNumber:'C-2026-01', date:'2026-01-10', value:2000000, notes:'عقد تنفيذ أعمال إنشائية'});
+
+  DB.clientExtracts.push({id:uid(), projectId, number:1, date:'2026-02-28', cumulativePercent:10, cumulativeValue:200000, retentionPercent:5, advancePercent:0, taxPercent:1, notes:'مستخلص رقم 1'});
+  DB.clientExtracts.push({id:uid(), projectId, number:2, date:'2026-04-30', cumulativePercent:25, cumulativeValue:500000, retentionPercent:5, advancePercent:0, taxPercent:1, notes:'مستخلص رقم 2'});
+  DB.clientPayments.push({id:uid(), clientId, projectId, date:'2026-03-05', amount:150000, method:'تحويل بنكي', receiptNo:'REC-001', notes:'دفعة تحت الحساب'});
+
+  DB.suppliers.push({id:supplierId, name:'مصنع الدلتا للحديد والصلب', phone:'01112223344', address:'العاشر من رمضان'});
+  DB.materials.push({id:mat1, name:'أسمنت بورتلاندي', unit:'طن', openingQty:50, minQty:20});
+  DB.materials.push({id:mat2, name:'حديد تسليح', unit:'طن', openingQty:10, minQty:5});
+  DB.purchases.push({id:uid(), projectId, supplierId, materialId:mat1, date:'2026-01-20', qty:100, unitPrice:1200, invoiceNo:'INV-001'});
+  DB.purchases.push({id:uid(), projectId, supplierId, materialId:mat2, date:'2026-01-22', qty:20, unitPrice:35000, invoiceNo:'INV-002'});
+  DB.materialIssues.push({id:uid(), projectId, materialId:mat1, date:'2026-02-01', qty:60, notes:'صرف للأساسات'});
+
+  DB.workers.push({id:workerId1, name:'محمد علي', jobTitle:'حداد', dailyWage:350, projectId});
+  DB.workers.push({id:workerId2, name:'أحمد سعيد', jobTitle:'نجار', dailyWage:300, projectId});
+  ['2026-09-01','2026-09-02','2026-09-03','2026-09-06','2026-09-07'].forEach((d,i)=>{
+    DB.attendance.push({id:uid(), workerId:workerId1, date:d, status:'حاضر', overtimeHours:i===2?2:0});
+  });
+  DB.attendance.push({id:uid(), workerId:workerId1, date:'2026-09-04', status:'غائب', overtimeHours:0});
+  ['2026-09-01','2026-09-02','2026-09-03','2026-09-06','2026-09-07'].forEach(d=>{
+    DB.attendance.push({id:uid(), workerId:workerId2, date:d, status:'حاضر', overtimeHours:0});
+  });
+
+  DB.subcontractors.push({id:subId, name:'مؤسسة ألفا للكهرباء', phone:'01234567890', specialty:'أعمال كهرباء'});
+  DB.subcontractorContracts.push({id:subContractId, projectId, subcontractorId:subId, contractValue:300000, retentionPercent:5});
+  DB.subcontractorExtracts.push({id:uid(), contractId:subContractId, number:1, date:'2026-03-15', cumulativePercent:15, cumulativeValue:45000, retentionPercent:5, advancePercent:0, notes:'مستخلص أعمال كهرباء 1'});
+
+  DB.progress.push({id:uid(), projectId, date:'2026-02-28', percent:10, notes:'أعمال الحفر والأساسات'});
+  DB.progress.push({id:uid(), projectId, date:'2026-04-30', percent:25, notes:'أعمال الهيكل الخرساني'});
+
+  DB.equipment.push({id:uid(), name:'ونش برجي', type:'رفع', ownership:'مستأجرة', dailyCost:1500, projectId});
+  DB.expenses.push({id:uid(), projectId, category:'نقل ومواصلات', date:'2026-02-10', amount:5000, notes:'نقل مواد للموقع'});
+  DB.expenses.push({id:uid(), projectId:'', category:'مصروفات عمومية', date:'2026-02-15', amount:3000, notes:'مصروفات إدارية عامة'});
+}
+// Seed demo data if the DB is completely empty and we haven't seeded before —
+// covers first run, and also an older empty file opened previously in this browser —
+// but never reseed after the user has deliberately wiped everything.
+const dbIsEmpty = Object.values(DB).every(arr => arr.length === 0);
+if(dbIsEmpty && localStorage.getItem(SEEDED_FLAG) !== '1'){
+  seedDemoData();
+  localStorage.setItem(SEEDED_FLAG, '1');
+  save();
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function findById(arr, id){ return arr.find(x=>x.id===id); }
+function num(v){ return Number(v||0); }
+function fmt(v){ return num(v).toLocaleString('en-US',{maximumFractionDigits:2}); }
+function materialStock(materialId){
+  const mat = findById(DB.materials, materialId); if(!mat) return 0;
+  const purchased = DB.purchases.filter(p=>p.materialId===materialId).reduce((s,p)=>s+num(p.qty),0);
+  const issued = DB.materialIssues.filter(i=>i.materialId===materialId).reduce((s,i)=>s+num(i.qty),0);
+  return num(mat.openingQty)+purchased-issued;
+}
+function materialAvgPrice(materialId){
+  const list = DB.purchases.filter(p=>p.materialId===materialId);
+  if(!list.length) return 0;
+  const totalQty = list.reduce((s,p)=>s+num(p.qty),0);
+  const totalVal = list.reduce((s,p)=>s+num(p.qty)*num(p.unitPrice),0);
+  return totalQty ? totalVal/totalQty : 0;
+}
+
+/* ============ TABS ============ */
+const TABS = [
+  {key:'dashboard', label:'📊 لوحة التحكم'},
+  {key:'projects', label:'🏗️ المشاريع'},
+  {key:'clients', label:'👥 العملاء'},
+  {key:'contracts', label:'📑 العقود'},
+  {key:'clientExtracts', label:'📄 مستخلصات العملاء'},
+  {key:'clientPayments', label:'💵 تحصيل من العملاء'},
+  {key:'suppliers', label:'🚚 الموردين'},
+  {key:'materials', label:'📦 المواد والمخزون'},
+  {key:'purchases', label:'🛒 المشتريات'},
+  {key:'materialIssues', label:'📤 صرف مواد للمشاريع'},
+  {key:'workers', label:'👷 العمال'},
+  {key:'attendance', label:'🕒 الحضور والانصراف'},
+  {key:'payroll', label:'💰 كشف الرواتب الشهري'},
+  {key:'subcontractors', label:'🔧 المقاولون الباطن'},
+  {key:'subcontractorContracts', label:'📃 عقود الباطن'},
+  {key:'subcontractorExtracts', label:'📄 مستخلصات الباطن'},
+  {key:'progress', label:'📈 نسب التنفيذ'},
+  {key:'equipment', label:'🚜 المعدات والآليات'},
+  {key:'expenses', label:'💸 المصروفات'},
+  {key:'retention', label:'🔒 الضمانات المحتجزة'},
+  {key:'settings', label:'⚙️ الإعدادات'}
+];
+let activeTab = 'dashboard';
+
+/* ============ FIELD CONFIG PER CRUD MODULE ============ */
+const FIELDS = {
+  projects:[
+    {name:'code',label:'كود المشروع',type:'text',required:true},
+    {name:'name',label:'اسم المشروع',type:'text',required:true},
+    {name:'clientId',label:'العميل',type:'select',ref:'clients',refLabel:r=>r.name},
+    {name:'location',label:'الموقع',type:'text'},
+    {name:'contractValue',label:'قيمة العقد',type:'number'},
+    {name:'startDate',label:'تاريخ البدء',type:'date'},
+    {name:'endDate',label:'تاريخ الانتهاء',type:'date'},
+    {name:'status',label:'الحالة',type:'select',options:['جاري التنفيذ','متوقف','منتهي','لم يبدأ']}
+  ],
+  clients:[
+    {name:'name',label:'الاسم',type:'text',required:true},
+    {name:'phone',label:'الهاتف',type:'text'},
+    {name:'address',label:'العنوان',type:'text'},
+    {name:'openingBalance',label:'رصيد افتتاحي',type:'number',default:0}
+  ],
+  contracts:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name,required:true},
+    {name:'contractNumber',label:'رقم العقد',type:'text'},
+    {name:'date',label:'تاريخ التعاقد',type:'date'},
+    {name:'value',label:'قيمة العقد',type:'number'},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  clientExtracts:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name,required:true},
+    {name:'number',label:'رقم المستخلص',type:'number',required:true},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'cumulativePercent',label:'نسبة الإنجاز التراكمية %',type:'number'},
+    {name:'cumulativeValue',label:'القيمة التراكمية للأعمال',type:'number',required:true},
+    {name:'retentionPercent',label:'نسبة ضمان الاستلام %',type:'number',default:5},
+    {name:'advancePercent',label:'نسبة خصم دفعة مقدمة %',type:'number',default:0},
+    {name:'taxPercent',label:'نسبة الخصم الضريبي %',type:'number',default:1},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  clientPayments:[
+    {name:'clientId',label:'العميل',type:'select',ref:'clients',refLabel:r=>r.name,required:true},
+    {name:'projectId',label:'المشروع (اختياري)',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'amount',label:'المبلغ المحصل',type:'number',required:true},
+    {name:'method',label:'طريقة التحصيل',type:'select',options:['نقدي','تحويل بنكي','شيك']},
+    {name:'receiptNo',label:'رقم الإيصال',type:'text'},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  suppliers:[
+    {name:'name',label:'الاسم',type:'text',required:true},
+    {name:'phone',label:'الهاتف',type:'text'},
+    {name:'address',label:'العنوان',type:'text'},
+    {name:'openingBalance',label:'رصيد افتتاحي',type:'number',default:0}
+  ],
+  materials:[
+    {name:'name',label:'اسم المادة',type:'text',required:true},
+    {name:'unit',label:'وحدة القياس',type:'text'},
+    {name:'openingQty',label:'رصيد افتتاحي',type:'number',default:0},
+    {name:'minQty',label:'حد الأمان',type:'number',default:0}
+  ],
+  purchases:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name},
+    {name:'supplierId',label:'المورد',type:'select',ref:'suppliers',refLabel:r=>r.name},
+    {name:'materialId',label:'المادة',type:'select',ref:'materials',refLabel:r=>r.name},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'qty',label:'الكمية',type:'number',required:true},
+    {name:'unitPrice',label:'سعر الوحدة',type:'number',required:true},
+    {name:'invoiceNo',label:'رقم الفاتورة',type:'text'}
+  ],
+  materialIssues:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name,required:true},
+    {name:'materialId',label:'المادة',type:'select',ref:'materials',refLabel:r=>r.name,required:true},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'qty',label:'الكمية المنصرفة',type:'number',required:true},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  workers:[
+    {name:'name',label:'الاسم',type:'text',required:true},
+    {name:'jobTitle',label:'الوظيفة',type:'text'},
+    {name:'dailyWage',label:'الأجر اليومي',type:'number',required:true},
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name}
+  ],
+  attendance:[
+    {name:'workerId',label:'العامل',type:'select',ref:'workers',refLabel:r=>r.name,required:true},
+    {name:'date',label:'التاريخ',type:'date',required:true},
+    {name:'status',label:'الحالة',type:'select',options:['حاضر','غائب','اجازة']},
+    {name:'overtimeHours',label:'ساعات إضافية',type:'number',default:0}
+  ],
+  subcontractors:[
+    {name:'name',label:'الاسم',type:'text',required:true},
+    {name:'phone',label:'الهاتف',type:'text'},
+    {name:'specialty',label:'التخصص',type:'text'},
+    {name:'openingBalance',label:'رصيد افتتاحي',type:'number',default:0}
+  ],
+  subcontractorContracts:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name,required:true},
+    {name:'subcontractorId',label:'المقاول الباطن',type:'select',ref:'subcontractors',refLabel:r=>r.name,required:true},
+    {name:'contractValue',label:'قيمة العقد',type:'number',required:true},
+    {name:'retentionPercent',label:'نسبة الضمان %',type:'number',default:5}
+  ],
+  subcontractorExtracts:[
+    {name:'contractId',label:'عقد الباطن',type:'select',ref:'subcontractorContracts',refLabel:r=>{
+      const sc=findById(DB.subcontractors,r.subcontractorId), p=findById(DB.projects,r.projectId);
+      return (sc?sc.name:'?')+' / '+(p?p.name:'?');
+    },required:true},
+    {name:'number',label:'رقم المستخلص',type:'number',required:true},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'cumulativePercent',label:'نسبة الإنجاز التراكمية %',type:'number'},
+    {name:'cumulativeValue',label:'القيمة التراكمية',type:'number',required:true},
+    {name:'retentionPercent',label:'نسبة الضمان %',type:'number',default:5},
+    {name:'advancePercent',label:'نسبة خصم دفعة مقدمة %',type:'number',default:0},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  progress:[
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name,required:true},
+    {name:'date',label:'التاريخ',type:'date',required:true},
+    {name:'percent',label:'نسبة الإنجاز %',type:'number',required:true},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ],
+  equipment:[
+    {name:'name',label:'اسم المعدة',type:'text',required:true},
+    {name:'type',label:'النوع',type:'text'},
+    {name:'ownership',label:'الملكية',type:'select',options:['مملوكة','مستأجرة']},
+    {name:'dailyCost',label:'التكلفة اليومية',type:'number',default:0},
+    {name:'projectId',label:'المشروع',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name}
+  ],
+  expenses:[
+    {name:'projectId',label:'المشروع (اتركه فارغ لمصروف عام)',type:'select',ref:'projects',refLabel:r=>r.code+' - '+r.name},
+    {name:'category',label:'البند',type:'select',options:['مصروفات عمومية','نقل ومواصلات','صيانة','إيجارات','أخرى']},
+    {name:'date',label:'التاريخ',type:'date'},
+    {name:'amount',label:'المبلغ',type:'number',required:true},
+    {name:'notes',label:'ملاحظات',type:'text'}
+  ]
+};
+
+/* extra computed columns for tables (label -> function(record)) */
+const COMPUTED = {
+  materials:(r)=>{
+    const stock = materialStock(r.id);
+    const low = stock < num(r.minQty);
+    return {'الرصيد الحالي بالمخزن': `<b>${fmt(stock)}</b> ${r.unit||''} ` + (low?`<span class="badge neg">⚠️ تحت حد الأمان</span>`:`<span class="badge pos">✔️ طبيعي</span>`)};
+  },
+  materialIssues:(r)=>{
+    const stockNow = materialStock(r.materialId);
+    return {'الرصيد الحالي لهذه المادة بالمخزن':fmt(stockNow)};
+  },
+  clients:(r)=>{
+    const myProjects = DB.projects.filter(p=>p.clientId===r.id).map(p=>p.id);
+    const due = DB.clientExtracts.filter(e=>myProjects.includes(e.projectId))
+      .reduce((s,e)=>{ const c=COMPUTED.clientExtracts(e); return s+parseFloat((c['صافي المستحق']||'0').replace(/,/g,'')); },0);
+    const collected = DB.clientPayments.filter(p=>p.clientId===r.id).reduce((s,p)=>s+num(p.amount),0);
+    const balance = num(r.openingBalance)+due-collected;
+    return {'إجمالي المستخلصات المستحقة':fmt(due), 'إجمالي المحصل':fmt(collected), 'الرصيد الحالي (تقديري)':fmt(balance)};
+  },
+  clientExtracts:(r)=>{
+    const list=DB.clientExtracts.filter(x=>x.projectId===r.projectId).sort((a,b)=>a.number-b.number);
+    const idx=list.findIndex(x=>x.id===r.id);
+    const prev = idx>0 ? num(list[idx-1].cumulativeValue) : 0;
+    const current = num(r.cumulativeValue)-prev;
+    const retention = current*num(r.retentionPercent)/100;
+    const advance = current*num(r.advancePercent)/100;
+    const tax = current*num(r.taxPercent)/100;
+    const net = current-retention-advance-tax;
+    return {'دفعة سابقة':fmt(prev),'قيمة الدفعة الحالية':fmt(current),'ضمان محتجز':fmt(retention),'صافي المستحق':fmt(net)};
+  },
+  subcontractorExtracts:(r)=>{
+    const list=DB.subcontractorExtracts.filter(x=>x.contractId===r.contractId).sort((a,b)=>a.number-b.number);
+    const idx=list.findIndex(x=>x.id===r.id);
+    const prev = idx>0 ? num(list[idx-1].cumulativeValue) : 0;
+    const current = num(r.cumulativeValue)-prev;
+    const retention = current*num(r.retentionPercent)/100;
+    const advance = current*num(r.advancePercent)/100;
+    const net = current-retention-advance;
+    return {'دفعة سابقة':fmt(prev),'قيمة الدفعة الحالية':fmt(current),'ضمان محتجز':fmt(retention),'صافي المستحق':fmt(net)};
+  },
+  purchases:(r)=>({'الإجمالي':fmt(num(r.qty)*num(r.unitPrice))}),
+  projects:(r)=>{
+    const extr=DB.clientExtracts.filter(x=>x.projectId===r.id);
+    const totalCollected = extr.reduce((s,e)=>{
+      const c=COMPUTED.clientExtracts(e); return s+parseFloat((c['صافي المستحق']||'0').replace(/,/g,''));
+    },0);
+    const prog=DB.progress.filter(x=>x.projectId===r.id).sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const lastPct = prog.length? prog[prog.length-1].percent+'%' : '—';
+    const materialsCost = DB.materialIssues.filter(i=>i.projectId===r.id)
+      .reduce((s,i)=>s+num(i.qty)*materialAvgPrice(i.materialId),0);
+    return {'آخر نسبة إنجاز':lastPct, 'صافي المحصل من العميل':fmt(totalCollected), 'قيمة المواد المنصرفة (تقديري)':fmt(materialsCost)};
+  }
+};
+
+/* ============ GENERIC CRUD RENDER ============ */
+let editState = {}; // module -> id being edited
+
+function getRefOptions(ref){ return (DB[ref]||[]); }
+
+function renderForm(moduleKey){
+  const fields = FIELDS[moduleKey];
+  const editing = editState[moduleKey];
+  const record = editing ? findById(DB[moduleKey], editing) : null;
+  let html = `<div class="form-section"><div class="form-row">`;
+  fields.forEach(f=>{
+    const val = record ? (record[f.name] ?? '') : (f.default ?? '');
+    html += `<div class="form-group"><label>${f.label}${f.required?' *':''}</label>`;
+    if(f.type==='select'){
+      let opts = f.options ? f.options.map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')
+        : getRefOptions(f.ref).map(r=>`<option value="${r.id}" ${val===r.id?'selected':''}>${f.refLabel(r)}</option>`).join('');
+      const extraAttrs = (moduleKey==='materialIssues' && f.name==='materialId') ? ' onchange="updateStockHint()"' : '';
+      html += `<select id="fld_${moduleKey}_${f.name}"${extraAttrs}><option value="">-- اختر --</option>${opts}</select>`;
+    } else {
+      html += `<input id="fld_${moduleKey}_${f.name}" type="${f.type}" value="${val}">`;
+    }
+    html += `</div>`;
+  });
+  html += `</div>`;
+  if(moduleKey==='materialIssues'){
+    html += `<div id="stockHint" style="margin-bottom:14px;color:#7c2d12;font-weight:bold;"></div>`;
+  }
+  html += `<div class="toolbar">
+    <button class="btn" onclick="saveRecord('${moduleKey}')">${editing?'💾 حفظ التعديل':'➕ إضافة'}</button>
+    ${editing?`<button class="btn secondary" onclick="cancelEdit('${moduleKey}')">إلغاء</button>`:''}
+    <button class="btn secondary" onclick="exportModule('${moduleKey}')">⬇️ تصدير Excel</button>
+  </div></div>`;
+  return html;
+}
+function updateStockHint(){
+  const sel = document.getElementById('fld_materialIssues_materialId');
+  const hint = document.getElementById('stockHint');
+  if(!sel || !hint) return;
+  const mat = findById(DB.materials, sel.value);
+  if(!mat){ hint.textContent = ''; return; }
+  const stock = materialStock(mat.id);
+  hint.textContent = `📦 الرصيد المتاح حاليًا من "${mat.name}": ${fmt(stock)} ${mat.unit||''}`;
+}
+
+function renderTable(moduleKey){
+  const fields = FIELDS[moduleKey];
+  const rows = DB[moduleKey];
+  if(!rows.length) return `<div class="empty">لا توجد بيانات بعد</div>`;
+  const computedFn = COMPUTED[moduleKey];
+  const extraLabels = computedFn ? Object.keys(computedFn(rows[0])) : [];
+  let html = `<div class="table-wrap"><table><thead><tr>`;
+  fields.forEach(f=> html += `<th>${f.label}</th>`);
+  extraLabels.forEach(l=> html += `<th>${l}</th>`);
+  html += `<th>إجراءات</th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    html += `<tr>`;
+    fields.forEach(f=>{
+      let display = r[f.name] ?? '';
+      if(f.type==='select' && f.ref){
+        const ref = findById(DB[f.ref], display);
+        display = ref ? f.refLabel(ref) : '—';
+      }
+      html += `<td>${display===''?'—':display}</td>`;
+    });
+    if(computedFn){
+      const c = computedFn(r);
+      Object.values(c).forEach(v=> html += `<td>${v}</td>`);
+    }
+    html += `<td>
+      <button class="btn small" onclick="editRecord('${moduleKey}','${r.id}')">✏️</button>
+      <button class="btn danger" onclick="deleteRecord('${moduleKey}','${r.id}')">🗑️</button>
+    </td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function renderCrudTab(moduleKey, title){
+  return `<div class="section-title">${title}</div>` + renderForm(moduleKey) + renderTable(moduleKey);
+}
+
+function saveRecord(moduleKey){
+  const fields = FIELDS[moduleKey];
+  const editing = editState[moduleKey];
+  const target = editing ? findById(DB[moduleKey], editing) : null;
+  const draft = editing ? {...target} : {id:uid()};
+  for(const f of fields){
+    const el = document.getElementById(`fld_${moduleKey}_${f.name}`);
+    let v = el.value;
+    if(f.required && !v){ alert('من فضلك املأ الحقل: '+f.label); return; }
+    draft[f.name] = f.type==='number' ? (v===''?'':Number(v)) : v;
+  }
+  if(moduleKey==='materialIssues' && draft.materialId){
+    const originalQty = editing ? num(target.qty) : 0;
+    const currentStock = materialStock(draft.materialId) + originalQty;
+    if(num(draft.qty) > currentStock){
+      if(!confirm(`⚠️ الكمية المطلوب صرفها (${fmt(draft.qty)}) أكبر من الرصيد المتاح بالمخزن (${fmt(currentStock)}).\nهل تريد المتابعة رغم ذلك؟`)) return;
+    }
+  }
+  if(editing){ Object.assign(target, draft); } else { DB[moduleKey].push(draft); }
+  editState[moduleKey] = null;
+  save(); renderActiveTab();
+}
+function editRecord(moduleKey,id){ editState[moduleKey]=id; renderActiveTab(); }
+function cancelEdit(moduleKey){ editState[moduleKey]=null; renderActiveTab(); }
+function deleteRecord(moduleKey,id){
+  if(!confirm('تأكيد الحذف؟')) return;
+  DB[moduleKey] = DB[moduleKey].filter(x=>x.id!==id);
+  save(); renderActiveTab();
+}
+function exportModule(moduleKey){
+  const fields = FIELDS[moduleKey];
+  const data = DB[moduleKey].map(r=>{
+    const row = {};
+    fields.forEach(f=>{
+      let v = r[f.name] ?? '';
+      if(f.type==='select' && f.ref){ const ref=findById(DB[f.ref], v); v = ref? f.refLabel(ref):''; }
+      row[f.label] = v;
+    });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, moduleKey.slice(0,30));
+  XLSX.writeFile(wb, moduleKey+'.xlsx');
+}
+
+/* ============ DASHBOARD ============ */
+function renderDashboard(){
+  const activeProjects = DB.projects.filter(p=>p.status==='جاري التنفيذ').length;
+  const totalContractValue = DB.projects.reduce((s,p)=>s+num(p.contractValue),0);
+  const totalCollected = DB.clientExtracts.reduce((s,e)=>{
+    const c=COMPUTED.clientExtracts(e); return s+parseFloat((c['صافي المستحق']||'0').replace(/,/g,''));
+  },0);
+  const totalActuallyCollected = DB.clientPayments.reduce((s,p)=>s+num(p.amount),0);
+  const totalSubPayable = DB.subcontractorExtracts.reduce((s,e)=>{
+    const c=COMPUTED.subcontractorExtracts(e); return s+parseFloat((c['صافي المستحق']||'0').replace(/,/g,''));
+  },0);
+  const totalExpenses = DB.expenses.reduce((s,e)=>s+num(e.amount),0);
+  const totalPurchases = DB.purchases.reduce((s,p)=>s+num(p.qty)*num(p.unitPrice),0);
+  const clientRetention = DB.clientExtracts.reduce((s,e)=>{
+    const list=DB.clientExtracts.filter(x=>x.projectId===e.projectId).sort((a,b)=>a.number-b.number);
+    const idx=list.findIndex(x=>x.id===e.id);
+    const prev = idx>0? num(list[idx-1].cumulativeValue):0;
+    const current = num(e.cumulativeValue)-prev;
+    return s + current*num(e.retentionPercent)/100;
+  },0);
+  const releasedClient = DB.retentionReleases.filter(r=>r.type==='client').reduce((s,r)=>s+num(r.amount),0);
+  return `
+  <div class="section-title">📊 نظرة عامة</div>
+  <div class="cards">
+    <div class="card"><h3>عدد المشاريع</h3><div class="val">${DB.projects.length}</div></div>
+    <div class="card"><h3>مشاريع جارية</h3><div class="val">${activeProjects}</div></div>
+    <div class="card"><h3>إجمالي قيم العقود</h3><div class="val">${fmt(totalContractValue)}</div></div>
+    <div class="card"><h3>صافي مستحقات المستخلصات</h3><div class="val">${fmt(totalCollected)}</div></div>
+    <div class="card"><h3>إجمالي المحصل فعليًا من العملاء</h3><div class="val">${fmt(totalActuallyCollected)}</div></div>
+    <div class="card"><h3>مستحقات المقاولين الباطن</h3><div class="val">${fmt(totalSubPayable)}</div></div>
+    <div class="card"><h3>إجمالي المشتريات</h3><div class="val">${fmt(totalPurchases)}</div></div>
+    <div class="card"><h3>إجمالي المصروفات</h3><div class="val">${fmt(totalExpenses)}</div></div>
+    <div class="card"><h3>ضمانات محتجزة لصالحنا (صافي)</h3><div class="val">${fmt(clientRetention-releasedClient)}</div></div>
+  </div>
+  <div class="section-title">🏗️ المشاريع الجارية</div>
+  ${renderTable('projects')}
+  `;
+}
+
+/* ============ PAYROLL ============ */
+function renderPayroll(){
+  const month = document.getElementById('payrollMonth')?.value || new Date().toISOString().slice(0,7);
+  let rows = DB.workers.map(w=>{
+    const att = DB.attendance.filter(a=>a.workerId===w.id && (a.date||'').startsWith(month));
+    const daysPresent = att.filter(a=>a.status==='حاضر').length;
+    const overtimeHours = att.reduce((s,a)=>s+num(a.overtimeHours),0);
+    const base = daysPresent*num(w.dailyWage);
+    const overtimePay = overtimeHours*(num(w.dailyWage)/8)*1.5;
+    const total = base+overtimePay;
+    return {name:w.name, jobTitle:w.jobTitle, daysPresent, overtimeHours, base, overtimePay, total};
+  });
+  let html = `<div class="section-title">💰 كشف الرواتب الشهري</div>
+  <div class="form-section"><div class="form-row">
+    <div class="form-group"><label>الشهر</label><input type="month" id="payrollMonth" value="${month}" onchange="renderActiveTab()"></div>
+  </div><div class="toolbar"><button class="btn secondary" onclick="exportPayroll('${month}')">⬇️ تصدير Excel</button></div></div>`;
+  if(!rows.length){ html += `<div class="empty">لا يوجد عمال مسجلين</div>`; return html; }
+  html += `<div class="table-wrap"><table><thead><tr>
+    <th>اسم العامل</th><th>الوظيفة</th><th>أيام الحضور</th><th>ساعات إضافية</th>
+    <th>الأجر الأساسي</th><th>مقابل الإضافي</th><th>الإجمالي</th></tr></thead><tbody>`;
+  let grand = 0;
+  rows.forEach(r=>{
+    grand += r.total;
+    html += `<tr><td>${r.name}</td><td>${r.jobTitle||'—'}</td><td>${r.daysPresent}</td><td>${r.overtimeHours}</td>
+      <td>${fmt(r.base)}</td><td>${fmt(r.overtimePay)}</td><td><b>${fmt(r.total)}</b></td></tr>`;
+  });
+  html += `</tbody></table></div><div class="cards" style="margin-top:16px;"><div class="card"><h3>إجمالي الرواتب المستحقة عن ${month}</h3><div class="val">${fmt(grand)}</div></div></div>`;
+  return html;
+}
+function exportPayroll(month){
+  const rows = DB.workers.map(w=>{
+    const att = DB.attendance.filter(a=>a.workerId===w.id && (a.date||'').startsWith(month));
+    const daysPresent = att.filter(a=>a.status==='حاضر').length;
+    const overtimeHours = att.reduce((s,a)=>s+num(a.overtimeHours),0);
+    const base = daysPresent*num(w.dailyWage);
+    const overtimePay = overtimeHours*(num(w.dailyWage)/8)*1.5;
+    return {'اسم العامل':w.name,'الوظيفة':w.jobTitle,'أيام الحضور':daysPresent,'ساعات إضافية':overtimeHours,'الأجر الأساسي':base,'مقابل الإضافي':overtimePay,'الإجمالي':base+overtimePay};
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'رواتب');
+  XLSX.writeFile(wb, 'payroll_'+month+'.xlsx');
+}
+
+/* ============ RETENTION (الضمانات المحتجزة) ============ */
+function renderRetention(){
+  const byProject = DB.projects.map(p=>{
+    const extracts = DB.clientExtracts.filter(e=>e.projectId===p.id).sort((a,b)=>a.number-b.number);
+    let held = 0;
+    extracts.forEach((e,idx)=>{
+      const prev = idx>0? num(extracts[idx-1].cumulativeValue):0;
+      const current = num(e.cumulativeValue)-prev;
+      held += current*num(e.retentionPercent)/100;
+    });
+    const released = DB.retentionReleases.filter(r=>r.type==='client' && r.refId===p.id).reduce((s,r)=>s+num(r.amount),0);
+    return {id:p.id, label:p.code+' - '+p.name, held, released, balance: held-released};
+  }).filter(x=>x.held>0 || x.released>0);
+
+  const byContract = DB.subcontractorContracts.map(c=>{
+    const sc = findById(DB.subcontractors,c.subcontractorId), p = findById(DB.projects,c.projectId);
+    const extracts = DB.subcontractorExtracts.filter(e=>e.contractId===c.id).sort((a,b)=>a.number-b.number);
+    let held = 0;
+    extracts.forEach((e,idx)=>{
+      const prev = idx>0? num(extracts[idx-1].cumulativeValue):0;
+      const current = num(e.cumulativeValue)-prev;
+      held += current*num(e.retentionPercent)/100;
+    });
+    const released = DB.retentionReleases.filter(r=>r.type==='subcontractor' && r.refId===c.id).reduce((s,r)=>s+num(r.amount),0);
+    return {id:c.id, label:(sc?sc.name:'?')+' / '+(p?p.name:'?'), held, released, balance: held-released};
+  }).filter(x=>x.held>0 || x.released>0);
+
+  const projOptions = byProject.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');
+  const contractOptions = byContract.map(x=>`<option value="${x.id}">${x.label}</option>`).join('');
+
+  let html = `<div class="section-title">🔒 ضمانات العملاء المحتجزة (لصالحنا حتى الإفراج)</div>`;
+  html += byProject.length ? `<div class="table-wrap"><table><thead><tr><th>المشروع</th><th>إجمالي المحتجز</th><th>تم الإفراج عنه</th><th>الرصيد الحالي</th></tr></thead><tbody>` +
+    byProject.map(x=>`<tr><td>${x.label}</td><td>${fmt(x.held)}</td><td>${fmt(x.released)}</td><td><b>${fmt(x.balance)}</b></td></tr>`).join('') + `</tbody></table></div>`
+    : `<div class="empty">لا توجد مستخلصات عملاء بعد</div>`;
+
+  html += `<div class="section-title">🔒 ضمانات مقاولي الباطن المحتجزة (عليهم لصالحنا)</div>`;
+  html += byContract.length ? `<div class="table-wrap"><table><thead><tr><th>المقاول / المشروع</th><th>إجمالي المحتجز</th><th>تم الإفراج عنه</th><th>الرصيد الحالي</th></tr></thead><tbody>` +
+    byContract.map(x=>`<tr><td>${x.label}</td><td>${fmt(x.held)}</td><td>${fmt(x.released)}</td><td><b>${fmt(x.balance)}</b></td></tr>`).join('') + `</tbody></table></div>`
+    : `<div class="empty">لا توجد مستخلصات مقاولي باطن بعد</div>`;
+
+  html += `<div class="section-title">➕ تسجيل إفراج عن ضمان</div>
+  <div class="form-section"><div class="form-row">
+    <div class="form-group"><label>نوع الضمان</label><select id="relType" onchange="renderActiveTab()">
+      <option value="client">ضمان عميل (مشروع)</option><option value="subcontractor">ضمان مقاول باطن</option></select></div>
+    <div class="form-group"><label>${document.getElementById('relType')?.value==='subcontractor'?'عقد الباطن':'المشروع'}</label>
+      <select id="relRef">${document.getElementById('relType')?.value==='subcontractor'?contractOptions:projOptions}</select></div>
+    <div class="form-group"><label>التاريخ</label><input type="date" id="relDate"></div>
+    <div class="form-group"><label>المبلغ المفرج عنه</label><input type="number" id="relAmount"></div>
+    <div class="form-group"><label>ملاحظات</label><input type="text" id="relNotes"></div>
+  </div><div class="toolbar"><button class="btn" onclick="addRetentionRelease()">💾 حفظ</button></div></div>`;
+
+  if(DB.retentionReleases.length){
+    html += `<div class="section-title">سجل الإفراجات</div><div class="table-wrap"><table><thead><tr><th>النوع</th><th>المرجع</th><th>التاريخ</th><th>المبلغ</th><th>ملاحظات</th><th></th></tr></thead><tbody>`;
+    DB.retentionReleases.forEach(r=>{
+      let refLabel = '—';
+      if(r.type==='client'){ const p=findById(DB.projects,r.refId); refLabel = p? p.code+' - '+p.name : '—'; }
+      else { const c=findById(DB.subcontractorContracts,r.refId); if(c){ const sc=findById(DB.subcontractors,c.subcontractorId); refLabel = sc?sc.name:'—'; } }
+      html += `<tr><td>${r.type==='client'?'عميل':'مقاول باطن'}</td><td>${refLabel}</td><td>${r.date||'—'}</td><td>${fmt(r.amount)}</td><td>${r.notes||'—'}</td>
+        <td><button class="btn danger" onclick="deleteRetentionRelease('${r.id}')">🗑️</button></td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  return html;
+}
+function addRetentionRelease(){
+  const type = document.getElementById('relType').value;
+  const refId = document.getElementById('relRef').value;
+  const amount = document.getElementById('relAmount').value;
+  if(!refId || !amount){ alert('من فضلك اختر المرجع وأدخل المبلغ'); return; }
+  DB.retentionReleases.push({id:uid(), type, refId, date:document.getElementById('relDate').value, amount:Number(amount), notes:document.getElementById('relNotes').value});
+  save(); renderActiveTab();
+}
+function deleteRetentionRelease(id){
+  if(!confirm('تأكيد الحذف؟')) return;
+  DB.retentionReleases = DB.retentionReleases.filter(x=>x.id!==id);
+  save(); renderActiveTab();
+}
+
+/* ============ SETTINGS ============ */
+function renderSettings(){
+  const last = Number(localStorage.getItem('lastBackupTime')||0);
+  const lastStr = last ? new Date(last).toLocaleString('en-GB') : 'لم يتم عمل نسخة بعد';
+  return `<div class="section-title">⚙️ الإعدادات والنسخ الاحتياطي</div>
+  <div class="form-section">
+    <p style="margin-bottom:14px;color:#475569;">آخر نسخة احتياطية: <b>${lastStr}</b> — النظام بياخد نسخة تلقائية كل 24 ساعة طالما الصفحة متفتحة في المتصفح.</p>
+    <div class="toolbar">
+      <button class="btn" onclick="exportAllExcel()">⬇️ تصدير نسخة احتياطية كاملة (Excel)</button>
+      <label class="btn secondary" style="cursor:pointer;">⬆️ استيراد نسخة احتياطية (Excel)
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="importAllExcel(event)">
+      </label>
+      <button class="btn danger" onclick="wipeAll()">🗑️ تصفير كل البيانات</button>
+    </div>
+  </div>`;
+}
+function exportAllExcel(){
+  const wb = XLSX.utils.book_new();
+  Object.keys(DB).forEach(key=>{
+    const rows = DB[key];
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws, key.slice(0,30));
+  });
+  const stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, 'contracting_backup_'+stamp+'.xlsx');
+  localStorage.setItem('lastBackupTime', Date.now());
+  if(activeTab==='settings') renderActiveTab();
+}
+function importAllExcel(e){
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    try{
+      const wb = XLSX.read(ev.target.result, {type:'array'});
+      const newDB = {};
+      Object.keys(DB).forEach(key=>{
+        if(wb.SheetNames.includes(key)){
+          const sheet = wb.Sheets[key];
+          let json = XLSX.utils.sheet_to_json(sheet, {defval:''});
+          json = json.filter(r=>Object.keys(r).length>0 && r.id!=='');
+          newDB[key] = json;
+        } else { newDB[key] = []; }
+      });
+      DB = newDB; save(); renderActiveTab();
+      alert('تم استيراد النسخة الاحتياطية بنجاح');
+    } catch(err){ alert('ملف غير صالح: '+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function wipeAll(){
+  if(!confirm('سيتم تصفير كل البيانات نهائيًا. متأكد؟')) return;
+  Object.keys(DB).forEach(k=>DB[k]=[]);
+  localStorage.setItem(SEEDED_FLAG, '1');
+  save(); renderActiveTab();
+}
+function checkAutoBackup(){
+  const last = Number(localStorage.getItem('lastBackupTime')||0);
+  const hasData = Object.values(DB).some(arr=>arr.length>0);
+  if(hasData && Date.now()-last > 24*60*60*1000){ exportAllExcel(); }
+}
+
+/* ============ ROUTER ============ */
+const CRUD_TITLES = {
+  projects:'🏗️ المشاريع', clients:'👥 العملاء', contracts:'📑 العقود',
+  clientExtracts:'📄 مستخلصات العملاء', clientPayments:'💵 تحصيل من العملاء',
+  suppliers:'🚚 الموردين', materials:'📦 المواد والمخزون',
+  purchases:'🛒 المشتريات', materialIssues:'📤 صرف مواد للمشاريع', workers:'👷 العمال',
+  attendance:'🕒 الحضور والانصراف', subcontractors:'🔧 المقاولون الباطن',
+  subcontractorContracts:'📃 عقود الباطن', subcontractorExtracts:'📄 مستخلصات الباطن',
+  progress:'📈 نسب التنفيذ', equipment:'🚜 المعدات والآليات', expenses:'💸 المصروفات'
+};
+
+function renderActiveTab(){
+  const content = document.getElementById('content');
+  if(activeTab==='dashboard') content.innerHTML = `<div class="tab-content active">${renderDashboard()}</div>`;
+  else if(activeTab==='payroll') content.innerHTML = `<div class="tab-content active">${renderPayroll()}</div>`;
+  else if(activeTab==='retention') content.innerHTML = `<div class="tab-content active">${renderRetention()}</div>`;
+  else if(activeTab==='settings') content.innerHTML = `<div class="tab-content active">${renderSettings()}</div>`;
+  else content.innerHTML = `<div class="tab-content active">${renderCrudTab(activeTab, CRUD_TITLES[activeTab])}</div>`;
+  if(activeTab==='materialIssues') updateStockHint();
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.key===activeTab));
+}
+function showTab(key){ activeTab = key; renderActiveTab(); }
+
+function initTabsBar(){
+  const bar = document.getElementById('tabsBar');
+  bar.innerHTML = TABS.map(t=>`<button class="tab" data-key="${t.key}" onclick="showTab('${t.key}')">${t.label}</button>`).join('');
+}
+initTabsBar();
+renderActiveTab();
+checkAutoBackup();
+setInterval(checkAutoBackup, 60*60*1000);
+</script>
+</body>
+</html>
